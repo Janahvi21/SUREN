@@ -1,0 +1,12 @@
+import { Check, Moon, Monitor, Sun } from 'lucide-react'
+
+import { Button } from '../components/ui/button'
+import { usePreferences, type Language, type Theme } from '../features/preferences/PreferencesContext'
+
+export function SettingsPage() {
+  const { language, theme, setLanguage, setTheme, t } = usePreferences()
+  const themes: Array<{ value: Theme; label: string; icon: typeof Sun }> = [{ value: 'light', label: 'Light', icon: Sun }, { value: 'dark', label: 'Dark', icon: Moon }, { value: 'system', label: 'System default', icon: Monitor }]
+  const languages: Array<{ value: Language; label: string }> = [{ value: 'en', label: 'English' }, { value: 'mr', label: 'मराठी' }, { value: 'hi', label: 'हिन्दी' }]
+
+  return <div className="max-w-3xl space-y-6"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700">{t('settings')}</p><h1 className="mt-2 text-3xl font-bold text-slate-900">{t('settings')}</h1><p className="mt-2 text-sm text-slate-600">Personalize your SUREN workspace.</p></div><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">Language</h2><p className="mt-1 text-sm text-slate-500">Choose the language used by the shared application navigation.</p><div className="mt-4 grid gap-3 sm:grid-cols-3">{languages.map((item) => <Button key={item.value} type="button" variant={language === item.value ? 'default' : 'outline'} className="justify-between" onClick={() => setLanguage(item.value)}>{item.label}{language === item.value && <Check className="h-4 w-4" />}</Button>)}</div></section><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">Appearance</h2><p className="mt-1 text-sm text-slate-500">Your preference is saved across sessions.</p><div className="mt-4 grid gap-3 sm:grid-cols-3">{themes.map(({ value, label, icon: Icon }) => <Button key={value} type="button" variant={theme === value ? 'default' : 'outline'} className="justify-between" onClick={() => setTheme(value)}><span className="flex items-center gap-2"><Icon className="h-4 w-4" />{label}</span>{theme === value && <Check className="h-4 w-4" />}</Button>)}</div></section><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">Notifications</h2><p className="mt-1 text-sm text-slate-500">Realtime request and transaction notifications are managed from the notification center.</p></section></div>
+}
