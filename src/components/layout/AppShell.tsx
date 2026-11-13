@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { BarChart3, BrainCircuit, ClipboardList, CreditCard, Crosshair, LayoutDashboard, LogOut, MapPinned, PackageCheck, UserRound, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
@@ -19,14 +20,55 @@ const navItems = [
   { key: 'map', to: '/dashboard/map', icon: MapPinned },
   { key: 'profile', to: '/dashboard/profile', icon: UserRound },
   { key: 'settings', to: '/dashboard/settings', icon: UserRound },
-]
+] as const
+
+function NavigationLinks({ items, mobile = false }: { items: readonly (typeof navItems)[number][]; mobile?: boolean }) {
+  const { t } = usePreferences()
+
+  return (
+    <nav aria-label="Primary navigation" className={mobile ? 'flex gap-2 overflow-x-auto px-4 py-2' : 'space-y-2'}>
+      {items.map(({ key, to, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={to === '/dashboard'}
+          className={({ isActive }) =>
+            `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+              isActive
+                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`
+          }
+        >
+          <Icon className="h-4 w-4" />
+          {t(key)}
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile, signOut } = useAuth()
   const { t } = usePreferences()
+  const [signOutError, setSignOutError] = useState('')
+  const [signingOut, setSigningOut] = useState(false)
+  const visibleNavItems = profile?.role === 'ADMIN'
+    ? navItems
+    : navItems.filter(({ key }) => key !== 'users')
 
   async function handleSignOut() {
-    await signOut()
+    setSignOutError('')
+    setSigningOut(true)
+    try {
+      const { error } = await signOut()
+      if (error) {
+        console.error('Unable to sign out', error)
+        setSignOutError(error.message)
+      }
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   return (
@@ -45,24 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <nav className="space-y-2">
-            {navItems.map(({ key, to, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`
-                }
-              >
-                <Icon className="h-4 w-4" />
-                {t(key as Parameters<typeof t>[0])}
-              </NavLink>
-            ))}
-          </nav>
+          <NavigationLinks items={visibleNavItems} />
 
           <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
@@ -86,13 +111,22 @@ export function AppShell({ children }: { children: ReactNode }) {
 
               <div className="flex items-center gap-3">
                 <NotificationBell />
-                <Button variant="outline" className="gap-2" onClick={handleSignOut}>
+                <Button variant="outline" className="gap-2" onClick={() => void handleSignOut()} disabled={signingOut}>
                   <LogOut className="h-4 w-4" />
-                  {t('signOut')}
+                  {signingOut ? 'Signing out...' : t('signOut')}
                 </Button>
               </div>
             </div>
+            <div className="md:hidden">
+              <NavigationLinks items={visibleNavItems} mobile />
+            </div>
           </header>
+
+          {signOutError && (
+            <p className="mx-4 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6 lg:mx-8" role="alert">
+              {signOutError}
+            </p>
+          )}
 
           <div className="p-4 sm:p-6 lg:p-8">
             <div className="mb-5 flex items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">

@@ -14,14 +14,14 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
 type PreferencesContextValue = { language: Language; theme: Theme; setLanguage: (language: Language) => void; setTheme: (theme: Theme) => void; t: (key: TranslationKey) => string }
 const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined)
 
-function getStored<T extends string>(key: string, fallback: T): T {
+function getStored<T extends string>(key: string, fallback: T, allowedValues: readonly T[]): T {
   const value = window.localStorage.getItem(key)
-  return (value as T | null) ?? fallback
+  return value && allowedValues.includes(value as T) ? value as T : fallback
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => getStored('suren-language', 'en'))
-  const [theme, setThemeState] = useState<Theme>(() => getStored('suren-theme', 'system'))
+  const [language, setLanguageState] = useState<Language>(() => getStored('suren-language', 'en', ['en', 'mr', 'hi']))
+  const [theme, setThemeState] = useState<Theme>(() => getStored('suren-theme', 'system', ['light', 'dark', 'system']))
 
   useEffect(() => {
     window.localStorage.setItem('suren-language', language)
@@ -29,8 +29,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     window.localStorage.setItem('suren-theme', theme)
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    document.documentElement.dataset.theme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = theme === 'system'
+        ? (mediaQuery.matches ? 'dark' : 'light')
+        : theme
+    }
+
+    applyTheme()
+    if (theme !== 'system') return
+
+    mediaQuery.addEventListener('change', applyTheme)
+    return () => mediaQuery.removeEventListener('change', applyTheme)
   }, [theme])
 
   return <PreferencesContext.Provider value={{ language, theme, setLanguage: setLanguageState, setTheme: setThemeState, t: (key) => translations[language][key] }}>{children}</PreferencesContext.Provider>

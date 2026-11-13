@@ -103,13 +103,13 @@ Each request has a trackable status.
 
 ### 3. Inventory-Aware Approval
 
-When a provider approves a request, the system automatically reduces the available resource quantity.
+When a provider approves a request, the requested amount is reserved atomically so concurrent approvals cannot over-allocate stock. The on-hand quantity is reduced only when the provider confirms the verified pickup.
 
 This helps prevent incorrect allocation when multiple seekers request the same resource.
 
 ### 4. QR-Based Pickup Verification
 
-Once a request is approved, a transaction is created and a secure QR token can be generated for pickup verification.
+Once a request is approved, a transaction and a one-time, expiring QR token hash are created. The seeker receives the raw pickup token only through an authenticated RPC; the provider verifies it and separately confirms handover.
 
 The QR can be verified using:
 
@@ -227,6 +227,15 @@ Providers can:
 * Add pincode
 * Add landmark
 * Specify pickup information
+* Set free, paid, or negotiable pricing with an amount in rupees when applicable
+
+Seekers can review provider identity and verification, resource condition and availability, the complete pickup address, posting date, and price before confirming a request. Contact details are shown only to the provider, an admin, or a seeker whose request has been approved. SUREN does not process or record payments; approving a paid-resource request is not confirmation of payment.
+
+The request records the displayed price and unit when submitted. If the listing's price, exchange type, or unit changes before submission, the request must be reviewed again against the updated listing.
+
+Paid-resource requests retain a price and total-price snapshot, but SUREN has no payment gateway. Payment remains pending and is never marked complete by request approval or resource handover.
+
+The request, provider-listing, and secure QR workflows require the migrations `202611130001_seeker_resource_discovery.sql` and `202611130002_secure_request_qr_workflow.sql` to be applied to the connected Supabase project.
 
 ### Location and Maps
 
@@ -420,6 +429,9 @@ Used for important backend workflows such as:
 * Reviewing requests
 * Approving and rejecting requests
 * Updating resource quantities
+* Returning only public provider profile fields for resource discovery
+* Restricting provider contact access to authorized users
+* Cancelling a seeker's pending request
 * Creating transactions
 * Maintaining consistent database operations
 

@@ -24,7 +24,7 @@ export function MatchingPage() {
     const currentProfile = profile
     async function load() {
       try {
-        const [nextResources, nextCategories] = await Promise.all([listResources(currentProfile.id, true), listCategories()])
+        const [nextResources, nextCategories] = await Promise.all([listResources(currentProfile.id, currentProfile.role, 'DISCOVERABLE'), listCategories()])
         setResources(nextResources)
         setCategories(nextCategories)
       } catch (loadError) { console.error(loadError); setError('Matching data could not be loaded.') } finally { setLoading(false) }

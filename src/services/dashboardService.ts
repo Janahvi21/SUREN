@@ -17,11 +17,21 @@ type DashboardActivity = {
 }
 
 async function countRows(table: string, filters: Array<[string, string, string]> = []) {
-  let query = supabase.from(table).select('*', { count: 'exact', head: true })
+  let query = supabase.from(table).select('id', { count: 'exact', head: true })
   for (const [column, operator, value] of filters) {
     if (operator === 'eq') query = query.eq(column, value)
   }
   const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
+async function countProviderPendingRequests(profileId: string) {
+  const { count, error } = await supabase
+    .from('requests')
+    .select('id, resource:resources!inner(provider_id)', { count: 'exact', head: true })
+    .eq('status', 'PENDING')
+    .eq('resource.provider_id', profileId)
   if (error) throw error
   return count ?? 0
 }
@@ -41,7 +51,7 @@ export async function getDashboardStats(profile: Profile): Promise<DashboardStat
   if (profile.role === 'PROVIDER') {
     const [resources, pendingRequests, completedTransactions, availableResources] = await Promise.all([
       countRows('resources', [['provider_id', 'eq', profile.id]]),
-      countRows('requests', [['status', 'eq', 'PENDING']]),
+      countProviderPendingRequests(profile.id),
       countRows('transactions', [['provider_id', 'eq', profile.id], ['status', 'eq', 'COMPLETED']]),
       countRows('resources', [['provider_id', 'eq', profile.id], ['status', 'eq', 'AVAILABLE']]),
     ])

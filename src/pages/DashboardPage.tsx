@@ -13,6 +13,8 @@ export function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [activity, setActivity] = useState<Activity>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     if (!profile) return
@@ -31,6 +33,8 @@ export function DashboardPage() {
       } catch (loadError) {
         console.error('Unable to load dashboard data', loadError)
         if (active) setError('Dashboard data could not be loaded. Check that the Supabase schema is applied.')
+      } finally {
+        if (active) setLoading(false)
       }
     }
 
@@ -38,7 +42,13 @@ export function DashboardPage() {
     return () => {
       active = false
     }
-  }, [profile])
+  }, [profile, reloadKey])
+
+  function retryDashboard() {
+    setError('')
+    setLoading(true)
+    setReloadKey((key) => key + 1)
+  }
 
   const isAdmin = profile?.role === 'ADMIN'
   const statsCards = [
@@ -50,7 +60,14 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={retryDashboard} className="font-semibold underline underline-offset-2">
+            Try again
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {statsCards.map(({ label, value, icon: Icon }) => (
@@ -62,7 +79,7 @@ export function DashboardPage() {
               <ArrowUpRight className="h-4 w-4 text-slate-400" />
             </div>
             <p className="mt-5 text-sm text-slate-500">{label}</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{value ?? '...'}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{value ?? (loading ? '...' : '--')}</p>
           </div>
         ))}
       </div>
@@ -85,7 +102,7 @@ export function DashboardPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Recent activity</h3>
           <div className="mt-5 space-y-4">
-            {activity.length === 0 && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">No requests yet.</p>}
+            {activity.length === 0 && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">{loading ? 'Loading activity...' : 'No requests yet.'}</p>}
             {activity.map((item) => (
               <div key={item.id} className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
                 <p className="font-medium">{item.title}</p>

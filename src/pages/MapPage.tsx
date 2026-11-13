@@ -35,7 +35,7 @@ export function MapPage() {
     if (!profile) return
     const currentProfile = profile
     async function load() {
-      try { setResources(await listResources(currentProfile.id, currentProfile.role !== 'PROVIDER')) } catch (loadError) { console.error(loadError); setError('Map resources could not be loaded.') } finally { setLoading(false) }
+      try { setResources(await listResources(currentProfile.id, currentProfile.role, currentProfile.role === 'PROVIDER' ? 'OWN' : 'DISCOVERABLE')) } catch (loadError) { console.error(loadError); setError('Map resources could not be loaded.') } finally { setLoading(false) }
     }
     void load()
   }, [profile])
