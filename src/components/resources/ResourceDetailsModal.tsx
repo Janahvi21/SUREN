@@ -1,11 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { BadgeCheck, CalendarDays, CheckCircle2, Clock3, MapPin, Package, Phone, ShieldCheck, UserRound, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '../ui/button'
 import { useAuth } from '../../features/auth/AuthContext'
 import { createResourceRequest } from '../../services/requestService'
-import { getResourceContactAccess, type Resource } from '../../services/resourceService'
+import { getResourceContactAccess, listResources, type Resource } from '../../services/resourceService'
 
 function pricePerUnit(unit: string) {
   const singular = unit.toLowerCase().endsWith('s') ? unit.slice(0, -1) : unit
@@ -35,7 +35,7 @@ function availabilityLabel(resource: Resource) {
 }
 
 export function ResourceDetailsModal({
-  resource,
+  resource: initialResource,
   canRequest,
   onClose,
   onRequestCreated,
@@ -46,6 +46,11 @@ export function ResourceDetailsModal({
   onRequestCreated: () => Promise<void>
 }) {
   const { profile } = useAuth()
+  const [resource, setResource] = useState(initialResource)
+  const [resourceRefreshing, setResourceRefreshing] = useState(true)
+  const [resourceAvailable, setResourceAvailable] = useState(initialResource.quantity > 0
+    && ['AVAILABLE', 'PARTIALLY_ALLOCATED'].includes(initialResource.status))
+  const [resourceError, setResourceError] = useState('')
   const [requesting, setRequesting] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [message, setMessage] = useState('')
@@ -57,6 +62,11 @@ export function ResourceDetailsModal({
   const [contactError, setContactError] = useState('')
   const [contactLoading, setContactLoading] = useState(true)
   const amount = resource.price
+  const fetchLatestResource = useCallback(async () => {
+    if (!profile) throw new Error('Sign in again before requesting this resource.')
+    const resources = await listResources(profile.id, profile.role, 'DISCOVERABLE')
+    return resources.find((item) => item.id === initialResource.id) ?? null
+  }, [initialResource.id, profile])
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -72,6 +82,36 @@ export function ResourceDetailsModal({
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [onClose])
+
+  useEffect(() => {
+    let active = true
+
+    void fetchLatestResource()
+      .then((latest) => {
+        if (!active) return
+        if (!latest || latest.quantity <= 0) {
+          setResourceAvailable(false)
+          setResourceError('This resource is no longer available. Refresh the listings to see current resources.')
+          return
+        }
+        setResource(latest)
+        setResourceAvailable(true)
+      })
+      .catch((error: unknown) => {
+        console.error('Unable to refresh resource details', error)
+        if (active) {
+          setResourceAvailable(false)
+          setResourceError('The latest listing details could not be verified. Check your connection and reopen this resource.')
+        }
+      })
+      .finally(() => {
+        if (active) setResourceRefreshing(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [fetchLatestResource])
 
   useEffect(() => {
     let active = true
@@ -111,13 +151,36 @@ export function ResourceDetailsModal({
     setRequestError('')
     setSubmitting(true)
     try {
+      const latestResource = await fetchLatestResource()
+      if (!latestResource || latestResource.quantity <= 0) {
+        setResourceAvailable(false)
+        setResourceError('This resource is no longer available. Refresh the listings to see current resources.')
+        setRequestError('This resource is no longer available, so your request was not sent.')
+        return
+      }
+
+      setResource(latestResource)
+      setResourceAvailable(true)
+      setResourceError('')
+      const pricingChanged = latestResource.exchange_type !== resource.exchange_type
+        || Number(latestResource.price) !== Number(resource.price)
+        || latestResource.unit !== resource.unit
+      if (pricingChanged) {
+        setRequestError('The provider updated this listing. Review the current price, unit, and availability, then confirm again.')
+        return
+      }
+      if (quantity > latestResource.quantity) {
+        setRequestError(`Only ${latestResource.quantity} ${latestResource.unit} are available now. Update the quantity and try again.`)
+        return
+      }
+
       const createdRequestId = await createResourceRequest(
-        resource.id,
+        latestResource.id,
         quantity,
         message,
-        resource.exchange_type,
-        resource.price,
-        resource.unit,
+        latestResource.exchange_type,
+        latestResource.price,
+        latestResource.unit,
       )
       setRequestId(createdRequestId)
       setRequestCreated(true)
@@ -130,10 +193,24 @@ export function ResourceDetailsModal({
       const rpcError = error as { code?: string; message?: string }
       if (rpcError.code === 'PGRST202') {
         setRequestError('The request service is not installed in the connected Supabase project yet. Apply the latest SUREN database migrations.')
-      } else if (rpcError.message?.includes('pricing or unit changed')) {
-        setRequestError('The listing price or unit changed. Review the refreshed details before trying again.')
-      } else if (rpcError.message?.includes('quantity')) {
-        setRequestError('The available quantity changed. Review the updated quantity and try again.')
+      } else if (rpcError.message?.includes('pricing or unit changed') || rpcError.message?.includes('quantity')) {
+        try {
+          const latestResource = await fetchLatestResource()
+          if (!latestResource || latestResource.quantity <= 0) {
+            setResourceAvailable(false)
+            setResourceError('This resource is no longer available. Refresh the listings to see current resources.')
+            setRequestError('This resource is no longer available, so your request was not sent.')
+          } else {
+            setResource(latestResource)
+            setResourceAvailable(true)
+            setRequestError(rpcError.message?.includes('quantity')
+              ? `The available quantity changed. There are now ${latestResource.quantity} ${latestResource.unit} available; update your request and try again.`
+              : 'The provider updated this listing. Review the current price and unit, then confirm again.')
+          }
+        } catch (refreshError) {
+          console.error('Unable to refresh resource after request validation failed', refreshError)
+          setRequestError('The listing changed while you were requesting it. Refresh the resource details and try again.')
+        }
       } else if (rpcError.message?.includes('already have a pending request')) {
         setRequestError('You already have a pending request for this resource. Track it in My Requests.')
       } else if (rpcError.message?.includes('own resource')) {
@@ -142,7 +219,7 @@ export function ResourceDetailsModal({
         setRequestError(rpcError.message || 'Your request could not be submitted. Please try again.')
       }
       void onRequestCreated().catch((refreshError: unknown) => {
-        console.error('Unable to refresh resource details after request failure', refreshError)
+        console.error('Unable to refresh resource listings after request failure', refreshError)
       })
     } finally {
       setSubmitting(false)
@@ -184,6 +261,8 @@ export function ResourceDetailsModal({
                 </span>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{availabilityLabel(resource)}</span>
               </div>
+              {resourceRefreshing && <p className="mt-2 text-xs text-slate-500">Checking the latest listing details...</p>}
+              {!resourceRefreshing && resourceError && <p className="mt-2 text-sm text-amber-800" role="status">{resourceError}</p>}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:min-w-40">
               <p className="text-xs text-slate-500">Quantity available</p>
@@ -308,14 +387,14 @@ export function ResourceDetailsModal({
               {requestError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{requestError}</p>}
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setRequesting(false)}>Back to details</Button>
-                <Button type="submit" disabled={submitting || !profile || quantity <= 0 || quantity > resource.quantity}>
+                <Button type="submit" disabled={submitting || resourceRefreshing || !resourceAvailable || !profile || quantity <= 0 || quantity > resource.quantity}>
                   {submitting ? 'Submitting request...' : 'Confirm and send request'}
                 </Button>
               </div>
             </form>
           )}
 
-          {canRequest && !requesting && !requestCreated && (
+          {canRequest && resourceAvailable && !resourceRefreshing && !requesting && !requestCreated && (
             <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={onClose}>Close</Button>
               <Button type="button" onClick={() => setRequesting(true)}>Request resource</Button>
